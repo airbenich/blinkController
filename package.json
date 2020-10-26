@@ -1,0 +1,17 @@
+{
+  "name": "blinkcontroller",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "atem-connection": "^1.3.3",
+    "node-blink1": "^0.4.0",
+    "socket.io": "^2.3.0"
+  }
+}
