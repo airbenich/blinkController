@@ -9,6 +9,8 @@ let atemInputProgramState = 0;
 let lastAtemInputProgramState = 0;
 let atemInputPreviewState = 0;
 let lastAtemInputPreviewState = 0;
+let atemInTransition = false;
+let lastAtemInTransition = false;
 let panasonicRemotePanelSelectedCamera = 0;
 let lastPanasonicRemotePanelSelectedCamera = 0;
 let panasonicWasChanged = false;
@@ -24,13 +26,14 @@ myAtem.on('connected', () => {
 
 myAtem.on('stateChanged', (state, pathToChange) => {
     if(state.video.ME['0']) {
-        var programInput = state.video.ME['0'].programInput;
-        // console.log(programInput); // catch the ATEM state.
         if(lastAtemInputProgramState !== state.video.ME['0'].programInput) {
             atemProgramChanged(state.video.ME['0'].programInput);
         }
         if(lastAtemInputPreviewState !== state.video.ME['0'].previewInput) {
             atemPreviewChanged(state.video.ME['0'].previewInput);
+        }
+        if(lastAtemInTransition !== state.video.ME['0'].inTransition) {
+            atemInTransitionChanged(state.video.ME['0'].inTransition);
         }
     }
 
@@ -47,6 +50,13 @@ function atemProgramChanged(state) {
     handleStateChange();
 }
 
+function atemInTransitionChanged(state) {
+    console.log('atemInTransitionChanged:' + state);
+    lastAtemInTransition = atemInTransition;
+    atemInTransition = state;
+    handleStateChange();
+}
+
 function setProgramTally() {
     switchOn(255,0,0);
 }
@@ -59,20 +69,31 @@ function setProgramTallyWithAttention() {
     // switchOns
     for(let i=0; i<blinkTimes+1; i++) {
         setTimeout(() => {
-            switchOn(255,0,0);
+            // switchOn(255,0,0);
+            blink.fadeToRGB(0, 255, 0, 0, 1);
+            blink.fadeToRGB(0, 0, 0, 0, 2);
         },(onTime+offTime)*i);
     }
 
     // switch Offs
     for(let i=0; i<blinkTimes; i++) {
         setTimeout(() => {
-            switchOff();
+            blink.fadeToRGB(0, 0, 0, 0, 1);
+            blink.fadeToRGB(0, 255, 0, 0, 2);
+            // switchOff();
         },offTime+i*(onTime+offTime));
     }
 }
 
 function setPreviewTally() {
-    switchOn(0,100,0);
+    // switchOn(0,255,0);
+    blink.fadeToRGB(100, 0, 200, 0, 0);
+}
+
+function setInTransitionTally() {
+    // switchOn(0,0,255);
+    blink.fadeToRGB(100, 255, 0, 0, 1);
+    blink.fadeToRGB(100, 0, 0, 255, 2);
 }
 
 function setTallyOff(params) {
@@ -92,17 +113,26 @@ function handleStateChange() {
     console.log({
         panasonicRemotePanelSelectedCamera,
         atemInputPreviewState,
-        atemInputProgramState
+        atemInputProgramState,
+        atemInTransition
     });
-    
+
     if(panasonicRemotePanelSelectedCamera === atemInputProgramState) {
-        if(panasonicWasChanged) {
-            setProgramTallyWithAttention();
+        if(atemInTransition) {
+            setInTransitionTally();
         } else {
-            setProgramTally();
+            if(panasonicWasChanged) {
+                setProgramTallyWithAttention();
+            } else {
+                setProgramTally();
+            }   
         }
     } else if(panasonicRemotePanelSelectedCamera === atemInputPreviewState) {
-        setPreviewTally();
+        if(atemInTransition) {
+            setInTransitionTally();
+        } else {
+            setPreviewTally();
+        }
     } else {
         setTallyOff();
     }
