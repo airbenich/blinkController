@@ -1,3 +1,6 @@
+/* 
+ * Connect to Blackmagic ATEM Switcher and react on tally state change
+ */
 const { Atem } = require('atem-connection')
 const myAtem = new Atem()
 myAtem.on('info', console.log)
@@ -39,29 +42,51 @@ myAtem.on('stateChanged', (state, pathToChange) => {
 
 });
 
+
+
+
+
+
+/* 
+ * Handle General Tally logic
+ */
+
 function atemPreviewChanged(state) {
     lastAtemInputPreviewState = atemInputPreviewState;
     atemInputPreviewState = state;
-    handleStateChange();
+    handleRemoteTallyStateChange();
+    handleWebsocketsStateChanged();
 }
 function atemProgramChanged(state) {
     lastAtemInputProgramState = atemInputProgramState;
     atemInputProgramState = state;
-    handleStateChange();
+    handleRemoteTallyStateChange();
+    handleWebsocketsStateChanged();
 }
 
 function atemInTransitionChanged(state) {
     console.log('atemInTransitionChanged:' + state);
     lastAtemInTransition = atemInTransition;
     atemInTransition = state;
-    handleStateChange();
+    handleRemoteTallyStateChange();
+    handleWebsocketsStateChanged();
 }
 
-function setProgramTally() {
-    switchOn(255,0,0);
+
+
+
+
+
+
+/* 
+ * Handle Remote Tally logic
+ */
+
+function setRemoteProgramTally() {
+    blink.fadeToRGB(100, 255, 0, 0, 0);
 }
 
-function setProgramTallyWithAttention() {
+function setRemoteProgramTallyWithAttention() {
     let onTime = 50;
     let offTime = 50;
     let blinkTimes = 2;
@@ -69,7 +94,6 @@ function setProgramTallyWithAttention() {
     // switchOns
     for(let i=0; i<blinkTimes+1; i++) {
         setTimeout(() => {
-            // switchOn(255,0,0);
             blink.fadeToRGB(0, 255, 0, 0, 1);
             blink.fadeToRGB(0, 0, 0, 0, 2);
         },(onTime+offTime)*i);
@@ -80,36 +104,25 @@ function setProgramTallyWithAttention() {
         setTimeout(() => {
             blink.fadeToRGB(0, 0, 0, 0, 1);
             blink.fadeToRGB(0, 255, 0, 0, 2);
-            // switchOff();
         },offTime+i*(onTime+offTime));
     }
 }
 
-function setPreviewTally() {
-    // switchOn(0,255,0);
+function setRemotePreviewTally() {
     blink.fadeToRGB(100, 0, 200, 0, 0);
 }
 
-function setInTransitionTally() {
-    // switchOn(0,0,255);
+function setRemoteInTransitionTally() {
     blink.fadeToRGB(100, 255, 0, 0, 1);
     blink.fadeToRGB(100, 0, 0, 255, 2);
 }
 
-function setTallyOff(params) {
-    switchOff();
+function setRemoteTallyOff(params) {
+    blink.off();
 }
 
-function panasonicRemotePanelSelectedCameraChanged(selectedCamera) {
-    lastPanasonicRemotePanelSelectedCamera = panasonicRemotePanelSelectedCamera;
-    panasonicRemotePanelSelectedCamera = selectedCamera
-    console.log('Panasonic Remote Panel - Selected Camera: ' +  selectedCamera);
-    panasonicWasChanged = true;
-    handleStateChange();
-}
-
-function handleStateChange() {
-    console.log('handleStateChange:');
+function handleRemoteTallyStateChange() {
+    console.log('handleRemoteTallyStateChange:');
     console.log({
         panasonicRemotePanelSelectedCamera,
         atemInputPreviewState,
@@ -117,44 +130,46 @@ function handleStateChange() {
         atemInTransition
     });
 
+    // handle Remote Tally
     if(panasonicRemotePanelSelectedCamera === atemInputProgramState) {
         if(atemInTransition) {
-            setInTransitionTally();
+            setRemoteInTransitionTally();
         } else {
             if(panasonicWasChanged) {
-                setProgramTallyWithAttention();
+                setRemoteProgramTallyWithAttention();
             } else {
-                setProgramTally();
+                setRemoteProgramTally();
             }   
         }
     } else if(panasonicRemotePanelSelectedCamera === atemInputPreviewState) {
         if(atemInTransition) {
-            setInTransitionTally();
+            setRemoteInTransitionTally();
         } else {
-            setPreviewTally();
+            setRemotePreviewTally();
         }
     } else {
-        setTallyOff();
+        setRemoteTallyOff();
     }
     panasonicWasChanged = false;
 }
 
 
+
+
+
+
+/* 
+ * Control blink(1) Light
+ */
+
 var Blink1 = require('node-blink1');
 const blinks = Blink1.devices(); // returns array of serial numbers
 let blink;
 
-if(blinks) {
+if(blinks.length > 0) {
     blink = new Blink1(blinks[0]);
 }
 
-function switchOn(r,g,b) {
-    blink.setRGB(r,g,b);
-}
-
-function switchOff() {
-    blink.off();
-}
 
 
 
@@ -162,13 +177,9 @@ function switchOff() {
 
 
 
-
-
-
-
-
-
-
+/* 
+ * Connect via Websocket to Panasonic Remote Panel AW-RP-150
+ */
 
 var io = require('socket.io-client');
 
@@ -195,3 +206,98 @@ client.on('disconnect', function(){
 client.on('selectedCamera',function(data) {
   panasonicRemotePanelSelectedCameraChanged(data);
 });
+
+function panasonicRemotePanelSelectedCameraChanged(selectedCamera) {
+    lastPanasonicRemotePanelSelectedCamera = panasonicRemotePanelSelectedCamera;
+    panasonicRemotePanelSelectedCamera = selectedCamera
+    console.log('Panasonic Remote Panel - Selected Camera: ' +  selectedCamera);
+    panasonicWasChanged = true;
+    handleRemoteTallyStateChange();
+}
+
+
+
+
+
+
+
+
+/* 
+ * Websocket Server for Websocket Tally
+ */
+var websocketClients = new Array();
+var port = 3000;
+
+httpServer.listen(port, () => {
+  console.log('Websockets listening on *:' + port);
+});
+
+// Authentication
+io.use(function(socket, next){
+  // console.log("Query: ", socket.handshake.query);
+  // return the result of next() to accept the connection.
+  if (socket.handshake.query.authentication == "sDJZn16TuP7zu82a") {
+      return next();
+  }
+  // call next() with an Error if you need to reject the connection.
+  next(new Error('Authentication error'));
+});
+
+// on conncection
+io.on('connection', function(socket){
+  console.log('Websocket client connected');
+
+  // add client to clientlist
+  websocketClients.push(socket);
+
+  // return 'connected'
+  socket.emit('connetion',true);
+
+
+  socket.on('disconnect', function(){
+    console.log('Client disconnected');
+  });
+});
+
+function sendCommandToAllWebsocketClients(key, value) {
+  websocketClients.forEach(function (websocketClient) {
+    websocketClient.emit(key, value);
+  });
+}
+
+
+function handleWebsocketsStateChanged() {
+    var websocketCameraNumber = 4;
+    
+    // handle Remote Tally
+    if(websocketCameraNumber === atemInputProgramState) {
+        if(atemInTransition) {
+            sendCommandToAllWebsocketClients('websocketTally', {
+                command: 'tally/transition',
+                camera: 'mobil'
+            });
+        } else {
+            sendCommandToAllWebsocketClients('websocketTally', {
+                command: 'tally/program',
+                camera: 'mobil'
+            });
+        }
+    } else if(websocketCameraNumber === atemInputPreviewState) {
+        if(atemInTransition) {
+            sendCommandToAllWebsocketClients('websocketTally', {
+                command: 'tally/transition',
+                camera: 'mobil'
+            });
+        } else {
+            sendCommandToAllWebsocketClients('websocketTally', {
+                command: 'tally/preview',
+                camera: 'mobil'
+            });
+        }
+    } else {
+        sendCommandToAllWebsocketClients('websocketTally', {
+            command: 'tally/off',
+            camera: 'mobil'
+        });
+    }
+}
