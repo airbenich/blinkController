@@ -180,15 +180,17 @@ if(blinks.length > 0) {
 /* 
  * Connect via Websocket to Panasonic Remote Panel AW-RP-150
  */
-
-var io = require('socket.io-client');
+var app = require('express')();
+var http = require('http');
+var httpServer = http.createServer(app);
+var ioClient = require('socket.io-client');
 
 var CONFIG = {};
 CONFIG.host = '172.17.121.14';
 CONFIG.port = 3001;
 
 // socket.io
-client = io.connect('http://'+CONFIG.host+':'+CONFIG.port,{
+client = ioClient.connect('http://'+CONFIG.host+':'+CONFIG.port,{
   query: "authentication=sDJZn16TuP7zu82a"
 });
 
@@ -227,6 +229,8 @@ function panasonicRemotePanelSelectedCameraChanged(selectedCamera) {
  */
 var websocketClients = new Array();
 var port = 3000;
+var io = require('socket.io')(httpServer);
+
 
 httpServer.listen(port, () => {
   console.log('Websockets listening on *:' + port);
@@ -268,7 +272,7 @@ function sendCommandToAllWebsocketClients(key, value) {
 
 function handleWebsocketsStateChanged() {
     var websocketCameraNumber = 4;
-    
+
     // handle Remote Tally
     if(websocketCameraNumber === atemInputProgramState) {
         if(atemInTransition) {
